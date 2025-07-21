@@ -1,0 +1,6 @@
+chromedriver
+chrome_user_data
+chrome_profile
+quick_testing.py
+.DS_Store
+__pycache__
