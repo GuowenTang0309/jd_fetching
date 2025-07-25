@@ -3,10 +3,6 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
-# ------------------------------------------------------------
-# Helper: calculate LinkedIn f_TPR param (last 30 days)
-# ------------------------------------------------------------
-
 def _last_30_days_param() -> str:
     today = datetime.date.today()
     first_of_this_month = today.replace(day=1)
@@ -48,9 +44,7 @@ def fetch_job_listing_urls(job_title: str, location: str, pages: int = 1) -> lis
 
         for card in cards:
             try:
-                url = card.select_one("a.base-card__full-link")[
-                    "href"
-                ].split("?")[0]
+                url = card.select_one("a.base-card__full-link")["href"].split("?")[0]
                 title = card.select_one("h3.base-search-card__title").get_text(strip=True)
                 company = card.select_one("h4.base-search-card__subtitle").get_text(strip=True)
                 loc = card.select_one("span.job-search-card__location").get_text(strip=True)
@@ -58,15 +52,13 @@ def fetch_job_listing_urls(job_title: str, location: str, pages: int = 1) -> lis
                 m = re.search(r"/jobs/view/(\d+)", url)
                 job_id = m.group(1) if m else ""
 
-                results.append(
-                    {
-                        "job_id": job_id,
-                        "url": url,
-                        "title": title,
-                        "company": company,
-                        "location": loc,
-                    }
-                )
+                results.append({
+                    "job_id": job_id,
+                    "url": url,
+                    "title": title,
+                    "company": company,
+                    "location": loc,
+                })
             except Exception:
                 continue
 

@@ -6,11 +6,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 import time
+from pathlib import Path
 import os
 
 class SeleniumJobScraper:
     def __init__(self, headless: bool = True):
-        chromedriver_path = "/Users/christang/Desktop/jd_fetching/chromedriver"
+        chromedriver_path = Path("chromedriver").resolve()
         opts = Options()
         if headless:
             opts.add_argument("--headless=new")
@@ -20,31 +21,40 @@ class SeleniumJobScraper:
         opts.add_argument("--window-size=1920,1080")
 
         # ✅ Use dedicated Chrome user data directory to avoid conflict
-        opts.add_argument("--user-data-dir=/Users/christang/Desktop/jd_fetching/chrome_user_data")
+        user_data_dir = Path("./chrome_user_data").resolve()
+        opts.add_argument(f"--user-data-dir={user_data_dir}")
 
         self.driver = webdriver.Chrome(service=Service(chromedriver_path), options=opts)
 
     def fetch_detail(
-        self, url: str, timeout: int = 12
-    ) -> tuple[str, str, str | None, str, str]:
+        self, url: str, timeout: int = 30
+    ) -> tuple[str | None, str | None]:
         d = self.driver
-        d.get(url)
-        print(">>> Navigated to:", url)
-        time.sleep(1)
 
-        # ───────────────────────── description ─────────────────────────
+        try:
+            d.set_page_load_timeout(timeout + 40)  
+            d.get(url)
+            print(">>> Navigated to:", url)
+            time.sleep(1)
+        except TimeoutException:
+            print(f"⏰ Page load timeout: {url}")
+            return None, None
+        except Exception as e:
+            print(f"❌ Exception during d.get(): {e}")
+            return None, None
+
+        # ───── description ─────
         try:
             see_more = WebDriverWait(d, timeout).until(
                 EC.element_to_be_clickable((
                     By.XPATH,
-                    # works for both condensed & expanded layouts
                     "//button[@aria-label='Click to see more description' or "
                     "contains(@class,'jobs-description__footer-button')]"
                 ))
             )
             d.execute_script("arguments[0].click();", see_more)
         except TimeoutException:
-            pass
+            pass  # not fatal
 
         try:
             WebDriverWait(d, timeout).until(
@@ -54,40 +64,24 @@ class SeleniumJobScraper:
                 By.CLASS_NAME, "show-more-less-html__markup"
             ).text.strip()
         except Exception:
-            description = ""
+            description = ""       
 
-        # ──────────────────────── title / company ──────────────────────
-        title = (
-            d.find_element(By.CSS_SELECTOR, "h1.top-card-layout__title").text.strip()
-            if d.find_elements(By.CSS_SELECTOR, "h1.top-card-layout__title")
-            else ""
-        )
-        company = (
-            d.find_element(By.CSS_SELECTOR, "span.topcard__flavor").text.strip()
-            if d.find_elements(By.CSS_SELECTOR, "span.topcard__flavor")
-            else ""
-        )
-
-        # ───────────────────────── apply URL ───────────────────────────
+        # ───── apply link ─────
         apply_link = ""
-
-        # ❶  ONLY the absolute XPath you trust
-        APPLY_LOCATOR = (
-            By.XPATH,
-            "/html/body/div[6]/div[3]/div[2]/div/div/main/div[2]/div[1]/div/div[1]/"
-            "div/div/div/div[6]/div/div/div/button",
-        )
-
         try:
+            APPLY_LOCATOR = (
+                By.XPATH,
+                "/html/body/div[6]/div[3]/div[2]/div/div/main/div[2]/div[1]/div/div[1]/"
+                "div/div/div/div[6]/div/div/div/button",
+            )
             btn = WebDriverWait(d, timeout).until(
                 EC.element_to_be_clickable(APPLY_LOCATOR)
             )
             original_window = d.current_window_handle
-            original_url    = d.current_url
+            original_url = d.current_url
             d.execute_script("arguments[0].click();", btn)
             time.sleep(2)
 
-            # 1️⃣ New window/tab?
             new_tabs = [w for w in d.window_handles if w != original_window]
             if new_tabs:
                 d.switch_to.window(new_tabs[0])
@@ -95,34 +89,17 @@ class SeleniumJobScraper:
                 d.close()
                 d.switch_to.window(original_window)
             else:
-                # 2️⃣ Same-tab redirect?
                 if d.current_url != original_url:
                     apply_link = d.current_url
-                else:
-                    if d.find_elements(
-                        By.CSS_SELECTOR,
-                        "div.jobs-easy-apply-modal, div[role='dialog'][data-test-modal='easy-apply']",
-                    ):
-                        apply_link = "Easy Apply (modal)"
-                    else:
-                        apply_link = ""
-
+                elif d.find_elements(
+                    By.CSS_SELECTOR,
+                    "div.jobs-easy-apply-modal, div[role='dialog'][data-test-modal='easy-apply']",
+                ):
+                    apply_link = "Easy Apply (modal)"
         except Exception as e:
-            ts   = int(time.time())
-            shot = f"apply_button_fail_{ts}.png"
-            d.save_screenshot(shot)
-            print(f"⚠️  Could not fetch apply URL: {e} – screenshot {shot}")
+            ts = int(time.time())
 
-        # ───────────────────────── industry (optional) ─────────────────
-        try:
-            industry = d.find_element(
-                By.CSS_SELECTOR,
-                "li.jobs-unified-top-card__job-insight span[aria-hidden='true']",
-            ).text.strip()
-        except Exception:
-            industry = None
-
-        return description, apply_link, industry, title, company
+        return description, apply_link
 
 
     def close(self):
